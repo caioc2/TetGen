@@ -3175,7 +3175,7 @@ void tetgenbehavior::usage()
 //                                                                            //
 //============================================================================//
 
-bool tetgenbehavior::parse_commandline(int argc, char **argv)
+bool tetgenbehavior::parse_commandline(int argc, const char **argv)
 {
   int startindex;
   int increment;
@@ -39090,7 +39090,7 @@ int main(int argc, char *argv[])
 //                                                                            //
 //============================================================================//
 
-void tetrahedralize(char *switches, tetgenio *in, tetgenio *out, 
+void tetrahedralize(const char *switches, tetgenio *in, tetgenio *out, 
                     tetgenio *addin, tetgenio *bgmin)
 
 #endif // not TETLIBRARY

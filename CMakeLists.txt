@@ -45,7 +45,7 @@ target_include_directories(tet PUBLIC "$<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_
 # TETLIBRARY makes TetGen compile itself as a linkable library (exposing
 # tetrahedralize() as a callable API) instead of a standalone CLI tool.
 # Only the 'tet' target needs it, not the 'tetgen' executable.
-target_compile_definitions(tet PRIVATE TETLIBRARY)
+target_compile_definitions(tet PUBLIC TETLIBRARY)
 
 # EXPORT_NAME TetGen: when exported (see TetGenTargets below), the target is
 # exposed as TetGen::TetGen rather than TetGen::tet.
