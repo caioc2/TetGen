@@ -35,7 +35,11 @@ add_library(TetGen::TetGen ALIAS tet)
 # evaluation order. Compiler optimizations can reorder or fuse operations,
 # producing incorrect geometric results, so predicates.cxx must always be
 # built with optimizations disabled, for both targets.
-set_source_files_properties(predicates.cxx PROPERTIES COMPILE_OPTIONS "-O0")
+if (MSVC)
+	set_source_files_properties(predicates.cxx PROPERTIES COMPILE_OPTIONS "/Od")
+else()
+	set_source_files_properties(predicates.cxx PROPERTIES COMPILE_OPTIONS "-O0")
+endif()
 
 #Set properties on a target. 
 #We use this here to set -DTETLIBRARY for when compiling the
@@ -45,7 +49,7 @@ target_include_directories(tet PUBLIC "$<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_
 # TETLIBRARY makes TetGen compile itself as a linkable library (exposing
 # tetrahedralize() as a callable API) instead of a standalone CLI tool.
 # Only the 'tet' target needs it, not the 'tetgen' executable.
-target_compile_definitions(tet PRIVATE TETLIBRARY)
+target_compile_definitions(tet PUBLIC TETLIBRARY)
 
 # EXPORT_NAME TetGen: when exported (see TetGenTargets below), the target is
 # exposed as TetGen::TetGen rather than TetGen::tet.
