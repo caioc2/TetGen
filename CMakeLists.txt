@@ -35,7 +35,11 @@ add_library(TetGen::TetGen ALIAS tet)
 # evaluation order. Compiler optimizations can reorder or fuse operations,
 # producing incorrect geometric results, so predicates.cxx must always be
 # built with optimizations disabled, for both targets.
-set_source_files_properties(predicates.cxx PROPERTIES COMPILE_OPTIONS "-O0")
+if (MSVC)
+	set_source_files_properties(predicates.cxx PROPERTIES COMPILE_OPTIONS "/Od")
+else()
+	set_source_files_properties(predicates.cxx PROPERTIES COMPILE_OPTIONS "-O0")
+endif()
 
 #Set properties on a target. 
 #We use this here to set -DTETLIBRARY for when compiling the
