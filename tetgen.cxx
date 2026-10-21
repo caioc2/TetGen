@@ -10920,6 +10920,12 @@ void tetgenmesh::transfernodes()
     x = pointloop[0] = in->pointlist[coordindex++];
     y = pointloop[1] = in->pointlist[coordindex++];
     z = pointloop[2] = in->pointlist[coordindex++];
+    if (((x - x) != 0.0) || ((y - y) != 0.0) || ((z - z) != 0.0)) {
+      // NaN or Inf. A NaN breaks the bounding box and the Hilbert sorting.
+      printf("Error:  Point #%d has a non-finite coordinate.\n",
+             i + in->firstnumber);
+      terminatetetgen(this, 10);
+    }
     // Read the point attributes. (Including point weights.)
     for (j = 0; j < in->numberofpointattributes; j++) {
       pointloop[3 + j] = in->pointattributelist[attribindex++];
@@ -26190,8 +26196,9 @@ void tetgenmesh::insertconstrainedpoints(tetgenio *addio)
     y = addio->pointlist[index++];
     z = addio->pointlist[index++];
     // Test if this point lies inside the bounding box.
-    if ((x < xmin) || (x > xmax) || (y < ymin) || (y > ymax) ||
-        (z < zmin) || (z > zmax)) {
+    // Written this way to also reject NaN coordinates.
+    if (!((x >= xmin) && (x <= xmax) && (y >= ymin) && (y <= ymax) &&
+          (z >= zmin) && (z <= zmax))) {
       if (b->verbose) {
         printf("Warning:  Point #%d lies outside the bounding box. Ignored\n",
                i + in->firstnumber);
