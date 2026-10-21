@@ -38559,6 +38559,10 @@ void tetgenmesh::out_intersected_facets()
   if (sptr != NULL) *sptr = '\0';
   strcat(FileName, "_skipped.face");
   FILE *fout = fopen(FileName, "w");
+  if (fout == (FILE *) NULL) {
+    printf("File I/O Error:  Cannot create file %s.\n", FileName);
+    return; // The skipped facets can not be saved
+  }
 
   if (!b->quiet) {
     printf("Writing %s\n", FileName);
@@ -38806,6 +38810,7 @@ void tetrahedralize(tetgenbehavior *b, tetgenio *in, tetgenio *out,
                m.skipped_facet_list->objects);
       }
 
+#ifndef TETLIBRARY
       if (!b->nofacewritten) m.out_intersected_facets();
       delete m.skipped_facet_list;
       m.skipped_facet_list = NULL;
@@ -38814,6 +38819,16 @@ void tetrahedralize(tetgenbehavior *b, tetgenio *in, tetgenio *out,
       if (!b->noelewritten)  m.outelements(out);
       if (!b->nofacewritten) m.outsubfaces(out);
       if (!b->nofacewritten) m.outsubsegments(out);
+#else
+      // Library mode: the skipped facets and nodes files are still written, when possible. The partial mesh is not
+      // output (the number of subfaces is not reliable after the skipped ones were removed), the caller only needs
+      // to know that the input is invalid.
+      if (!b->nofacewritten) {
+        try { m.out_intersected_facets(); } catch (...) { }
+      }
+      delete m.skipped_facet_list;
+      m.skipped_facet_list = NULL;
+#endif
 
       terminatetetgen(NULL, 3); // This is not a normal exit.
     }
