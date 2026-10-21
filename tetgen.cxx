@@ -4228,6 +4228,9 @@ char* tetgenmesh::arraypool::getblock(int objectindex)
     //   its contents.
     newsize = topindex + 128;
     toparray = (char **) malloc((size_t) (newsize * sizeof(char *)));
+    if (toparray == (char **) NULL) {
+      terminatetetgen(NULL, 1);
+    }
     toparraylen = newsize;
     for (i = 0; i < newsize; i++) {
       toparray[i] = (char *) NULL;
@@ -4243,6 +4246,9 @@ char* tetgenmesh::arraypool::getblock(int objectindex)
     // Allocate the new array, copy the contents, NULL out the rest, and
     //   free the old array.
     newarray = (char **) malloc((size_t) (newsize * sizeof(char *)));
+    if (newarray == (char **) NULL) {
+      terminatetetgen(NULL, 1);
+    }
     for (i = 0; i < toparraylen; i++) {
       newarray[i] = toparray[i];
     }
@@ -4261,6 +4267,9 @@ char* tetgenmesh::arraypool::getblock(int objectindex)
   if (block == (char *) NULL) {
     // Allocate a block at this index.
     block = (char *) malloc((size_t) (objectsperblock * objectbytes));
+    if (block == (char *) NULL) {
+      terminatetetgen(NULL, 1);
+    }
     toparray[topindex] = block;
     // Account for the memory.
     totalmemory += objectsperblock * objectbytes;
@@ -8082,6 +8091,11 @@ void tetgenmesh::flip41(triface* fliptets, int hullflag, flipconstraints *fc)
           esym(neightet, newface);
           tspivot(newface, flipshs[i]);
           eprevself(neightet);
+          if (flipshs[i].sh == NULL) {
+            // Inconsistent subfaces (e.g., from an invalid input), they are
+            //   used by flip31() below.
+            terminatetetgen(this, 2);
+          }
         }
       } else {
         spivot = 3; // The new subface is [a,b,c].
@@ -14890,6 +14904,11 @@ void tetgenmesh::meshsurface()
     // Get a facet F.
     f = &in->facetlist[shmark - 1];
 
+    if ((f->numberofpolygons > 0) && (f->polygonlist == NULL)) {
+      printf("Error:  Facet %d has a NULL polygon list.\n", shmark);
+      terminatetetgen(this, 10);
+    }
+
     // Process the duplicated points first, they are marked with type
     //   DUPLICATEDVERTEX.  If p and q are duplicated, and p'index > q's,
     //   then p is substituted by q.
@@ -14918,6 +14937,13 @@ void tetgenmesh::meshsurface()
     for (i = 0; i < f->numberofpolygons; i++) {
       // Get a polygon.
       p = &(f->polygonlist[i]);
+      if ((p->numberofvertices < 1) || (p->vertexlist == NULL)) {
+        if (!b->quiet) {
+          printf("Warning:  Polygon %d of facet %d has no vertex.\n", i + 1,
+                 shmark);
+        }
+        continue; // Skip this polygon.
+      }
       // Get the first vertex.
       end1 = p->vertexlist[0];
       if ((end1 < in->firstnumber) || 
@@ -25105,7 +25131,8 @@ void tetgenmesh::reconstructmesh()
     maketetrahedron(&tetloop); // tetloop.ver = 11.
     setvertices(tetloop, p[0], p[1], p[2], p[3]);
     // Set element attributes if they exist.
-    for (j = 0; j < in->numberoftetrahedronattributes; j++) {
+    for (j = 0; (in->tetrahedronattributelist != NULL) &&
+                (j < in->numberoftetrahedronattributes); j++) {
       idx = i * in->numberoftetrahedronattributes;
       attrib = in->tetrahedronattributelist[idx + j];
       setelemattribute(tetloop.tet, j, attrib);
@@ -26214,6 +26241,11 @@ void tetgenmesh::collectremovepoints(arraypool *remptlist)
           ptloop = pointtraverse();
           continue;
         }
+      }
+      if (point2tet(ptloop) == NULL) {
+        // An unused vertex (not in any tetrahedron) has no star.
+        ptloop = pointtraverse();
+        continue;
       }
       if (ptloop[pointmtrindex] > 0) {
         // Get the smallest edge length at this vertex.
@@ -38711,6 +38743,23 @@ void tetrahedralize(tetgenbehavior *b, tetgenio *in, tetgenio *out,
   m.b = b;
   m.in = in;
   m.addin = addin;
+
+  // Make sure the arrays that are always dereferenced are there (avoid crash).
+  if ((in->numberofpoints > 0) &&
+      ((in->pointlist == NULL) ||
+       ((in->numberofpointattributes > 0) && (in->pointattributelist == NULL)) ||
+       ((in->numberofpointmtrs > 0) && (in->pointmtrlist == NULL))) ||
+      (b->plc && !b->refine && (in->numberoffacets > 0) &&
+       (in->facetlist == NULL)) ||
+      (b->refine && (in->numberoftetrahedra > 0) &&
+       (in->tetrahedronlist == NULL)) ||
+      ((in->numberofholes > 0) && (in->holelist == NULL)) ||
+      ((in->numberofregions > 0) && (in->regionlist == NULL)) ||
+      ((addin != NULL) && (addin->numberofpoints > 0) &&
+       (addin->pointlist == NULL))) {
+    printf("Error:  Missing input data (a list is NULL).\n");
+    terminatetetgen(&m, 10);
+  }
 
   if (b->metric && bgmin && (bgmin->numberofpoints > 0)) {
     m.bgm = new tetgenmesh(); // Create an empty background mesh.
