@@ -15157,7 +15157,13 @@ enum tetgenmesh::interresult
   }
 
   // Walk through tets around pa until the right one is found.
+  long walksteps = 0;
   while (1) {
+
+    if (++walksteps > 10 * tetrahedrons->items + 100) {
+      // The walk is cycling (e.g., an invalid, overlapping input mesh).
+      terminatetetgen(this, 2);
+    }
 
     pd = oppo(*searchtet);
     // Check whether the opposite vertex is 'endpt'.
@@ -25271,12 +25277,18 @@ void tetgenmesh::reconstructmesh()
         bond(tetloop, hulltet);
         // Try connecting this to others that share common hull edges.
         for (j = 0; j < 3; j++) {
+          long spincount = 0;
           fsym(hulltet, face2);
           while (1) {
             if (face2.tet == NULL) break;
             esymself(face2);
             if (apex(face2) == dummypoint) break;
             fsymself(face2);
+            if (++spincount > tetrahedrons->items) {
+              // The tets around this edge form a closed ring (invalid input).
+              printf("Error:  The input mesh is invalid (overlapping tets).\n");
+              terminatetetgen(this, 10);
+            }
           }
           if (face2.tet != NULL) {
             // Found an adjacent hull tet.
@@ -25581,6 +25593,11 @@ void tetgenmesh::reconstructmesh()
             idx++;
             spivotself(nextsh);
             if (nextsh.sh == subloop.sh) break;
+            if ((nextsh.sh == NULL) || ((long) idx > subfaces->items)) {
+              // The subface ring is broken (invalid input).
+              printf("Error:  The input mesh is invalid (subfaces).\n");
+              terminatetetgen(this, 10);
+            }
           }
         } else {
           // There is only one subface at this edge.
