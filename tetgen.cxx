@@ -23540,6 +23540,16 @@ void tetgenmesh::recoverboundary(clock_t& tv)
     makesegmentendpointsmap();
   }
 
+  // create_a_shorter_edge() (used when Steiner points are added) needs the facet-vertex and segment-facet maps.
+  if (b->addsteiner_algo == 1) {
+    if (idx_ridge_vertex_facet_list == NULL) {
+      makefacetverticesmap();
+    }
+    if (idx_segment_facet_list == NULL) {
+      create_segment_facet_map();
+    }
+  }
+
 
   if (b->verbose) {
     printf("  Recovering segments.\n");
@@ -27202,6 +27212,16 @@ void tetgenmesh::makefacetverticesmap()
 
   if (b->verbose) {
     printf("  Creating the facet vertices map.\n");
+  }
+
+  // The map may have been created before (boundary recovery)
+  if (idx_ridge_vertex_facet_list != NULL) {
+    delete [] idx_ridge_vertex_facet_list;
+    idx_ridge_vertex_facet_list = NULL;
+  }
+  if (ridge_vertex_facet_list != NULL) {
+    delete [] ridge_vertex_facet_list;
+    ridge_vertex_facet_list = NULL;
   }
 
   facetvertexlist = new arraypool(sizeof(arraypool *), 10);
