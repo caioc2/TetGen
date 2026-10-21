@@ -11332,7 +11332,8 @@ void tetgenmesh::randomsample(point searchpt,triface *searchtet)
     }
   } else {
     // The mesh is non-convex. Do not use 'recenttet'.
-    searchdist = longest;
+    searchdist = longest;//Original code -  fails?
+    searchdist = 3.402823E+38; //Set to max float, so we guarantee it will not be null on search
   }
 
   // Select "good" candidate using k random samples, taking the closest one.
