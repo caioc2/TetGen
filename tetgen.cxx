@@ -12213,6 +12213,12 @@ void tetgenmesh::incrementaldelaunay(clock_t& tv)
   if (!b->quiet) {
     printf("Delaunizing vertices...\n");
   }
+  if (in->numberofpoints < 4) {
+    // The code below reads the first four vertices.
+    printf("Exception:  Less than four vertices are given (%d).\n",
+           in->numberofpoints);
+    terminatetetgen(this, 10);
+  }
   // Form a random permuation (uniformly at random) of the set of vertices.
   permutarray = new point[in->numberofpoints];
   points->traversalinit();
@@ -14917,8 +14923,12 @@ void tetgenmesh::meshsurface()
       for (i = 0; i < f->numberofpolygons; i++) {
         p = &(f->polygonlist[i]);
         // Loop other vertices of this polygon.
-        for (j = 0; j < p->numberofvertices; j++) {
+        for (j = 0; (p->vertexlist != NULL) && (j < p->numberofvertices); j++) {
           end1 = p->vertexlist[j];
+          if ((end1 < in->firstnumber) ||
+              (end1 >= in->firstnumber + in->numberofpoints)) {
+            continue; // An invalid vertex, it is reported below.
+          }
           tstart = idx2verlist[end1];
           if (tstart == nullptr) {
             terminatetetgen(this, 10); // Report an input error!
@@ -24034,12 +24044,12 @@ void tetgenmesh::recoverboundary(clock_t& tv)
           spintet = neightet;
           do {
             if (issubface(spintet)) {
-              tspivot(spintet, sfaces[snum++]);
-              if (snum > snum_limit) {
-                // Unlikely to happen.
+              if (snum >= snum_limit) {
+                // Unlikely to happen. (Checked before writing sfaces[snum].)
                 terminatetetgen(this, 2);
                 //tmp_sfaces = new face[snum_limit * 2];
               }
+              tspivot(spintet, sfaces[snum++]);
             }
             fnextself(spintet);
           } while (spintet.tet != neightet.tet);
@@ -25107,6 +25117,15 @@ void tetgenmesh::reconstructmesh()
     // Get the four vertices.
     idx = i * in->numberofcorners;
     for (j = 0; j < 4; j++) {
+      if ((in->tetrahedronlist[idx] < in->firstnumber) ||
+          (in->tetrahedronlist[idx] >= in->firstnumber + in->numberofpoints)) {
+        if ((in->firstnumber != 1) || (in->tetrahedronlist[idx] != 0)) {
+          // Index 0 is the dummypoint when the first index is 1 (see above).
+          printf("Error:  Invalid vertex %d in tetrahedron #%d.\n",
+                 in->tetrahedronlist[idx], i + in->firstnumber);
+          terminatetetgen(this, 10);
+        }
+      }
       p[j] = idx2verlist[in->tetrahedronlist[idx++]];
       if (pointtype(p[j]) == UNUSEDVERTEX) {
         setpointtype(p[j], VOLVERTEX); // initial type.
@@ -25284,6 +25303,19 @@ void tetgenmesh::reconstructmesh()
       }
       if (marker != 0) {
         idx = i * 3;
+        for (j = 0; j < 3; j++) {
+          if ((in->trifacelist[idx + j] < in->firstnumber) ||
+              (in->trifacelist[idx + j] >= in->firstnumber + in->numberofpoints)) {
+            break;
+          }
+        }
+        if (j < 3) {
+          if (!b->quiet) {
+            printf("Warning:  Invalid vertex %d in subface #%d. Skipped.\n",
+                   in->trifacelist[idx + j], i + in->firstnumber);
+          }
+          continue; // Skip this subface.
+        }
         for (j = 0; j < 3; j++) {
           p[j] = idx2verlist[in->trifacelist[idx++]];
         }
