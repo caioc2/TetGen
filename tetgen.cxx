@@ -46,6 +46,10 @@
 
 #include "tetgen.h"
 
+// Change by Caio SOUZA: std::find() is used by the check of the vertices
+//   removed from the surface in insertpoint() (orphan facet vertex fix).
+#include <algorithm>
+
 //== io_cxx ==================================================================//
 //                                                                            //
 //                                                                            //
@@ -10189,6 +10193,79 @@ int tetgenmesh::insertpoint(point insertpt, triface *searchtet, face *splitsh,
         } // if (cutshcount > 0)
       } // if (ivf->splitbdflag)
     } // if (cutcount > 0)
+
+    // Change by Caio SOUZA: fixes an orphan vertex (removed from the surface
+    //   but still used by tets outside C(p)), which led to NaN coordinates
+    //   in the mesh smoothing.
+    if (ivf->splitbdflag) {
+      // A vertex in the interior of sC(p) is removed from the surface mesh.
+      //   It must also be in the interior of C(p), i.e., all tets at this
+      //   vertex must be in C(p), so it is removed from the volume as well.
+      //   Otherwise (C(p) may have been cut at tets which are not adjacent to
+      //   its subfaces), it would remain in the mesh without any subface.
+      //   Then the updated sC(p) is invalid. Do not insert this vertex.
+      std::vector<point> checkedpts;
+      std::vector<tetrahedron*> startets;
+      face spinsh;
+      for (i = 0; i < caveshlist->objects; i++) {
+        checksh = * (face *) fastlookup(caveshlist, i);
+        for (j = 0; j < 3; j++) {
+          pa = sorg(checksh);
+          if (std::find(checkedpts.begin(), checkedpts.end(), pa) ==
+              checkedpts.end()) {
+            checkedpts.push_back(pa);
+            // Check if all subfaces at 'pa' are in sC(p) and 'pa' is not on a
+            //   segment. Rotate around 'pa', 'spinsh' is at edge [pa, x].
+            bool interiorflag = true;
+            spinsh = checksh;
+            while (1) {
+              if (isshsubseg(spinsh)) {
+                interiorflag = false; break; // 'pa' is on a segment.
+              }
+              spivotself(spinsh);
+              if (spinsh.sh == NULL) {
+                interiorflag = false; break; // 'pa' is on the boundary.
+              }
+              if (sorg(spinsh) != pa) {
+                sesymself(spinsh);
+              }
+              if (!smarktested(spinsh)) {
+                interiorflag = false; break; // Not in sC(p).
+              }
+              // Go to the other edge [pa, y] of this subface.
+              senext2self(spinsh);
+              sesymself(spinsh);
+              if (spinsh.sh == checksh.sh) break; // Rotated around 'pa'.
+            }
+            if (interiorflag) {
+              // All tets at 'pa' must be in C(p).
+              startets.clear();
+              stpivot(checksh, neightet);
+              startets.push_back(neightet.tet);
+              for (size_t n = 0; n < startets.size(); n++) {
+                neightet.tet = startets[n];
+                if (!infected(neightet)) {
+                  insertpoint_abort(splitseg, ivf);
+                  ivf->iloc = (int) NULLCAVITY;
+                  return 0;
+                }
+                for (k = 0; k < 4; k++) {
+                  decode(startets[n][k], neineitet);
+                  pts = (point *) &(neineitet.tet[4]);
+                  if (((pts[0] == pa) || (pts[1] == pa) || (pts[2] == pa) ||
+                       (pts[3] == pa)) &&
+                      (std::find(startets.begin(), startets.end(),
+                                 neineitet.tet) == startets.end())) {
+                    startets.push_back(neineitet.tet);
+                  }
+                }
+              }
+            }
+          }
+          senextself(checksh);
+        }
+      }
+    } // if (ivf->splitbdflag)
 
   } // if (ivf->validflag)
 
