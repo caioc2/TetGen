@@ -1871,6 +1871,8 @@ public:
   void flip23(triface*, int, flipconstraints* fc);
   void flip32(triface*, int, flipconstraints* fc);
   void flip41(triface*, int, flipconstraints* fc);
+  // Change by Caio SOUZA: undoes the surface flip of flip32() (see tetgen.cxx).
+  void unflip22(triface*, point, flipconstraints* fc);
 
   // A generalized edge flip.
   int flipnm(triface*, int n, int level, int, flipconstraints* fc);

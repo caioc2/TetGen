@@ -8023,6 +8023,112 @@ void tetgenmesh::flip32(triface* fliptets, int hullflag, flipconstraints *fc)
   recenttet = fliptets[0];
 }
 
+// Change by Caio SOUZA: new routine. Fixes the "invalid 2-to-2 flip" crash
+//   when flipnm()/flipnm_post() undo a 3-to-2 flip that had also flipped the
+//   surface mesh: the undo (a 2-to-3 flip) did not restore the subfaces.
+//============================================================================//
+//                                                                            //
+// unflip22()    Undo the 2-to-2 flip in surface mesh done by a 3-to-2 flip.  //
+//                                                                            //
+// A 3-to-2 flip [a,b] => [c,d,e] at an edge [a,b] with two subfaces [a,b,c]  //
+// and [b,a,d] also flips the surface mesh, the subfaces become [c,d,b] and   //
+// [d,c,a]. The 2-to-3 flip [c,d,e] => [a,b] which undoes it (in flipnm() and //
+// flipnm_post()) does not change the surface mesh. Without this routine the  //
+// subfaces would stay at the edge [c,d], and the following undo flips, that  //
+// expect the original surface mesh, could remove the faces holding them.     //
+//                                                                            //
+// 'fliptets' are the three tets at the edge [a,b] returned by flip23(), and  //
+// 'pe' is the vertex 'e', i.e., [a,b,e] was not a subface. The subfaces      //
+// [c,d,b] and [d,c,a] are flipped back to [a,b,c] and [b,a,d].               //
+//                                                                            //
+//============================================================================//
+
+void tetgenmesh::unflip22(triface* fliptets, point pe, flipconstraints *fc)
+{
+  triface fronttet, backtet, neightet;
+  face flipfaces[2];
+  point pa, pb, px, py;
+  int t1ver;
+  int i, j;
+
+  // Find the tet [a,b,x,y] which does not contain 'e', i.e., [x,y] is [c,d]
+  //   or [d,c]. Its faces [x,b,y] and [a,x,y] are the two subfaces.
+  for (i = 0; i < 3; i++) {
+    if ((apex(fliptets[i]) != pe) && (oppo(fliptets[i]) != pe)) break;
+  }
+  enextesym(fliptets[i], fronttet); // [x,b,y,a]
+  eprevesym(fliptets[i], backtet);  // [a,x,y,b]
+  if (!issubface(fronttet) || !issubface(backtet)) {
+    terminatetetgen(this, 2); // Report a bug.
+  }
+
+  pa =  org(fliptets[i]);
+  pb = dest(fliptets[i]);
+  px = apex(fliptets[i]);
+  py = oppo(fliptets[i]);
+
+  // Disconnect the two subfaces from the tets.
+  tspivot(fronttet, flipfaces[0]);
+  tspivot(backtet, flipfaces[1]);
+  tsdissolve(fronttet);
+  fsym(fronttet, neightet);
+  tsdissolve(neightet);
+  tsdissolve(backtet);
+  fsym(backtet, neightet);
+  tsdissolve(neightet);
+
+  // flip23() gave the three tets the same attributes. The tet [a,b,x,y] will
+  //   be separated from the other two by the subfaces. It is in the region
+  //   of its neighbors at the faces [x,b,y] and [a,x,y] (they are not
+  //   subfaces anymore). Restore its element attributes and volume constraint.
+  fsym(fronttet, neightet);
+  if (ishulltet(neightet)) {
+    fsym(backtet, neightet);
+  }
+  if (!ishulltet(neightet)) {
+    for (j = 0; j < numelemattrib; j++) {
+      setelemattribute(fliptets[i].tet, j, elemattribute(neightet.tet, j));
+    }
+    if (b->varvolume) {
+      setvolumebound(fliptets[i].tet, volumebound(neightet.tet));
+    }
+  }
+
+  // Flip [x,y,b] and [y,x,a] to [b,a,y] and [a,b,x].
+  for (j = 0; (j < 3) && (sapex(flipfaces[0]) != pb); j++) {
+    senextself(flipfaces[0]);
+  }
+  if (sorg(flipfaces[0]) != px) {
+    sesymself(flipfaces[0]);
+  }
+  for (j = 0; (j < 3) && (sapex(flipfaces[1]) != pa); j++) {
+    senextself(flipfaces[1]);
+  }
+  if (sorg(flipfaces[1]) != py) {
+    sesymself(flipfaces[1]);
+  }
+  flip22(flipfaces, 0, fc->chkencflag);
+
+  // Connect [a,b,x] to the tets at the face [a,b,x].
+  neightet = fliptets[i]; // [a,b,x,y]
+  if (sorg(flipfaces[1]) != org(neightet)) {
+    sesymself(flipfaces[1]);
+  }
+  tsbond(neightet, flipfaces[1]);
+  fsymself(neightet);
+  sesymself(flipfaces[1]);
+  tsbond(neightet, flipfaces[1]);
+  // Connect [b,a,y] to the tets at the face [b,a,y].
+  esym(fliptets[i], neightet); // [b,a,y,x]
+  if (sorg(flipfaces[0]) != org(neightet)) {
+    sesymself(flipfaces[0]);
+  }
+  tsbond(neightet, flipfaces[0]);
+  fsymself(neightet);
+  sesymself(flipfaces[0]);
+  tsbond(neightet, flipfaces[0]);
+}
+
 //============================================================================//
 //                                                                            //
 // flip41()    Perform a 4-to-1 flip (Remove a vertex).                       //
@@ -8995,6 +9101,15 @@ int tetgenmesh::flipnm(triface* abtets, int n, int level, int abedgepivot,
                                        abedgepivot, fc);
       }
       if (!rejflag) {
+        // Change by Caio SOUZA: remember the surface flip done by flip32(),
+        //   so the undo flips below and in flipnm_post() can revert it too.
+        // If there are two subfaces at [a,b], the surface mesh is flipped as
+        //   well. Remember the apex of the face at [a,b] which is not a
+        //   subface, it is needed to undo the flip in the surface mesh.
+        point surfflippt = NULL;
+        if (checksubfaceflag && (nn == 2)) {
+          surfflippt = apex(abtets[edgepivot]);
+        }
         // Do flip: [a,b] => [c,d,e]
         flip32(abtets, hullflag, fc);
         if (fc->remove_ndelaunay_edge) {
@@ -9005,6 +9120,13 @@ int tetgenmesh::flipnm(triface* abtets, int n, int level, int abedgepivot,
                 (fabs(fc->tetprism_vol_sum) < fc->bak_tetprism_vol)) {
               // No improvement! flip back: [c,d,e] => [a,b].
               flip23(abtets, hullflag, fc);
+              // Change by Caio SOUZA: the 2-to-3 undo flip does not restore
+              //   the surface mesh flipped by flip32(). Fixes the crash in
+              //   the next undo flips ("invalid 2-to-2 flip").
+              if (surfflippt != NULL) {
+                // Flip back the surface mesh as well.
+                unflip22(abtets, surfflippt, fc);
+              }
               // Increase the element counter -- They are in cavity.
               for (j = 0; j < 3; j++) {
                 increaseelemcounter(abtets[j]); 
@@ -9032,6 +9154,11 @@ int tetgenmesh::flipnm(triface* abtets, int n, int level, int abedgepivot,
             }
           }
         } // if (fc->collectnewtets)
+        // Change by Caio SOUZA: pass the surface flip to flipnm_post().
+        // 'abtets[2]' is not used anymore. Remember in it if the surface mesh
+        //   was flipped, so flipnm_post() can undo it as well.
+        abtets[2].tet = (tetrahedron *) surfflippt;
+        abtets[2].ver = (surfflippt != NULL) ? 1 : 0;
         return 2;
       }
     } // if (reducflag)
@@ -9087,8 +9214,16 @@ int tetgenmesh::flipnm_post(triface* abtets, int n, int nn, int abedgepivot,
     // 'abtets[0]' is [c,d,e,b] or [#,#,#,b].
     // 'abtets[1]' is [d,c,e,a] or [#,#,#,a].
     if (fc->unflip) {
+      // Change by Caio SOUZA: also undo the surface flip recorded by
+      //   flipnm(). Fixes the "invalid 2-to-2 flip" crash.
+      // Was the surface mesh flipped as well (see flipnm())?
+      point surfflippt = (abtets[2].ver == 1) ? (point) abtets[2].tet : NULL;
       // Do a 2-to-3 flip to recover the edge [a,b]. There may be hull tets.
       flip23(abtets, 1, fc);
+      if (surfflippt != NULL) {
+        // Flip back the surface mesh as well.
+        unflip22(abtets, surfflippt, fc);
+      }
       if (fc->collectnewtets) {
         // Pop up new (flipped) tets from the stack.
         if (abedgepivot == 0) {
