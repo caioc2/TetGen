@@ -15398,13 +15398,7 @@ enum tetgenmesh::interresult
   }
 
   // Walk through tets around pa until the right one is found.
-  long walksteps = 0;
   while (1) {
-
-    if (++walksteps > 10 * tetrahedrons->items + 100) {
-      // The walk is cycling (e.g., an invalid, overlapping input mesh).
-      terminatetetgen(this, 2);
-    }
 
     pd = oppo(*searchtet);
     // Check whether the opposite vertex is 'endpt'.
@@ -25356,7 +25350,7 @@ void tetgenmesh::reconstructmesh()
   tetrahedron *ver2tetarray;
   point *idx2verlist;
   triface tetloop, checktet, prevchktet;
-  triface hulltet, face1, face2;
+  triface hulltet, face1, face2, neightet;
   tetrahedron tptr;
   face subloop, neighsh, nextsh;
   face segloop;
@@ -25422,6 +25416,15 @@ void tetgenmesh::reconstructmesh()
         unuverts--;
       }
     }
+    // Change by Caio SOUZA: reject a tet with a repeated vertex. It is put
+    //   twice in the tet list of that vertex below, so its faces could be
+    //   matched to its own faces.
+    if ((p[0] == p[1]) || (p[0] == p[2]) || (p[0] == p[3]) ||
+        (p[1] == p[2]) || (p[1] == p[3]) || (p[2] == p[3])) {
+      printf("Error:  Tetrahedron #%d has a repeated vertex.\n",
+             i + in->firstnumber);
+      terminatetetgen(this, 10);
+    }
     // Check the orientation.
     ori = orient3d(p[0], p[1], p[2], p[3]);
     if (ori > 0.0) {
@@ -25481,35 +25484,51 @@ void tetgenmesh::reconstructmesh()
           for (j = 0; j < 3; j++) {
             // Go to the face [b',a',d], or [c',b',d], or [a',c',d].
             esym(checktet, face2);
-            if (face2.tet[face2.ver & 3] == NULL) {
-              k = ((j + 1) % 3);
-              if (q[k] == p[0]) {   // b', c', a' = a
-                if (q[j] == p[1]) { // a', b', c' = b
-                  // [#,#,d] is matched to [b,a,d].
-                  esym(tetloop, face1);
+            // Change by Caio SOUZA: bond two faces only when both of them are
+            //   free. Before, only 'face2' was checked. A face shared by more
+            //   than two tets (e.g., duplicated or overlapping tets) then
+            //   overwrote the bond of 'face1', which left a neighbor pointing
+            //   to a tet that does not point back to it. The walks around
+            //   edges below (and later) then never ended. As before for a
+            //   bonded 'face2', the extra tet is left unbonded at this face.
+            // Find the face of 'tetloop' at d matched to it (if any).
+            face1.tet = NULL;
+            k = ((j + 1) % 3);
+            if ((q[k] == p[0]) && (q[j] == p[1])) {
+              // b', c', a' = a and a', b', c' = b
+              // [#,#,d] is matched to [b,a,d].
+              esym(tetloop, face1);
+            } else if ((q[k] == p[1]) && (q[j] == p[2])) {
+              // b',c',a' = b and a',b',c' = c
+              // [#,#,d] is matched to [c,b,d].
+              enext(tetloop, face1);
+              esymself(face1);
+            } else if ((q[k] == p[2]) && (q[j] == p[0])) {
+              // b',c',a' = c and a',b',c' = a
+              // [#,#,d] is matched to [a,c,d].
+              eprev(tetloop, face1);
+              esymself(face1);
+            }
+            if (face1.tet != NULL) {
+              // Skip it if the two faces were bonded already (at another
+              //   vertex of this face).
+              fsym(face2, neightet);
+              if ((neightet.tet != face1.tet) ||
+                  ((neightet.ver & 3) != (face1.ver & 3))) {
+                if ((face2.tet[face2.ver & 3] == NULL) &&
+                    (face1.tet[face1.ver & 3] == NULL)) {
                   bond(face1, face2);
-                  bondflag++;
+                } else {
+                  // One side is bonded to another tet already.
+                  if (!b->quiet) {
+                    printf("Warning:  Face [%d,%d,%d] is shared by more than "
+                           "two tetrahedra.\n", pointmark(org(face1)),
+                           pointmark(dest(face1)), pointmark(apex(face1)));
+                  }
                 }
               }
-              if (q[k] == p[1]) {   // b',c',a' = b
-                if (q[j] == p[2]) { // a',b',c' = c
-                  // [#,#,d] is matched to [c,b,d].
-                  enext(tetloop, face1);
-                  esymself(face1);
-                  bond(face1, face2);
-                  bondflag++;
-                }
-              }
-              if (q[k] == p[2]) {   // b',c',a' = c
-                if (q[j] == p[0]) { // a',b',c' = a
-                  // [#,#,d] is matched to [a,c,d].
-                  eprev(tetloop, face1);
-                  esymself(face1);
-                  bond(face1, face2);
-                  bondflag++;
-                }
-              }
-            } else {
+            }
+            if (face2.tet[face2.ver & 3] != NULL) {
               bondflag++;
             }
             enextself(checktet);
@@ -25555,18 +25574,12 @@ void tetgenmesh::reconstructmesh()
         bond(tetloop, hulltet);
         // Try connecting this to others that share common hull edges.
         for (j = 0; j < 3; j++) {
-          long spincount = 0;
           fsym(hulltet, face2);
           while (1) {
             if (face2.tet == NULL) break;
             esymself(face2);
             if (apex(face2) == dummypoint) break;
             fsymself(face2);
-            if (++spincount > tetrahedrons->items) {
-              // The tets around this edge form a closed ring (invalid input).
-              printf("Error:  The input mesh is invalid (overlapping tets).\n");
-              terminatetetgen(this, 10);
-            }
           }
           if (face2.tet != NULL) {
             // Found an adjacent hull tet.
@@ -25871,11 +25884,6 @@ void tetgenmesh::reconstructmesh()
             idx++;
             spivotself(nextsh);
             if (nextsh.sh == subloop.sh) break;
-            if ((nextsh.sh == NULL) || ((long) idx > subfaces->items)) {
-              // The subface ring is broken (invalid input).
-              printf("Error:  The input mesh is invalid (subfaces).\n");
-              terminatetetgen(this, 10);
-            }
           }
         } else {
           // There is only one subface at this edge.
