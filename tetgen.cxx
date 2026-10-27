@@ -9847,6 +9847,35 @@ int tetgenmesh::insertpoint(point insertpt, triface *searchtet, face *splitsh,
                 sign = incircle3d(sorg(neighsh), sdest(neighsh),
                                   sapex(neighsh), insertpt);
                 if (sign < 0) {
+                  // Change by Caio SOUZA: fixes the infinite loop (hang) in
+                  //   insertpoint() at "Find the tet containing the face
+                  //   [a,b,p]" caused by a duplicated new subface.
+                  // Do not include it if it shares a segment (which is not
+                  //   the splitting one) with a subface of sC(p). This happens
+                  //   when two facets meet at this segment with a (nearly) zero
+                  //   dihedral angle. Each subface of sC(p) at this segment
+                  //   would create the same new subface [a,b,p], and both
+                  //   would be bonded to the same tet face.
+                  for (k = 0; (k < 3) && (sign < 0); k++) {
+                    sspivot(neighsh, checkseg);
+                    if ((checkseg.sh != NULL) && !smarktested(checkseg)) {
+                      for (s = 0; (s < caveshlist->objects) && (sign < 0); s++) {
+                        face cavesh = * (face *) fastlookup(caveshlist, s);
+                        for (int e = 0; e < 3; e++) {
+                          face cavseg;
+                          sspivot(cavesh, cavseg);
+                          if (cavseg.sh == checkseg.sh) {
+                            sign = 0; // Do not include it.
+                            break;
+                          }
+                          senextself(cavesh);
+                        }
+                      }
+                    }
+                    senextself(neighsh);
+                  }
+                }
+                if (sign < 0) {
                   smarktest(neighsh);
                   caveshlist->newindex((void **) &parysh);
                   *parysh = neighsh;
