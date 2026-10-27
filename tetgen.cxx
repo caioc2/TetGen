@@ -22502,6 +22502,43 @@ int tetgenmesh::removevertexbyflips(point steinerpt, flipconstraints &fc)
 
   // Try to reduce the number of edges at 'p' by flips.
   getvertexstar(1, steinerpt, cavetetlist, cavetetvertlist, NULL);
+
+  // Change by Caio SOUZA: fixes the failure to recover a segment (in
+  //   finddirection()) after removing a non-manifold Steiner point whose
+  //   star was only partially collected.
+  if ((vt == FREESEGVERTEX) || (vt == FREEFACETVERTEX)) {
+    // The star of 'p' is collected through the faces at 'p'. It is not the
+    //   complete star if 'p' is a non-manifold vertex, e.g., two parts of a
+    //   non-convex domain only meet at 'p'. Then the flips would remove 'p'
+    //   from only a part of the mesh. Check that the tets at its segments (or
+    //   at its subface) are in the star. Otherwise, do not remove it.
+    triface bdtets[2];
+    int bdcount = 0, k;
+    if (vt == FREESEGVERTEX) {
+      sstpivot1(leftseg, bdtets[0]);
+      sstpivot1(rightseg, bdtets[1]);
+      bdcount = 2;
+    } else {
+      sdecode(point2sh(steinerpt), parentsh);
+      if (parentsh.sh != NULL) {
+        stpivot(parentsh, bdtets[0]);
+        if (bdtets[0].tet != NULL) bdcount = 1;
+      }
+    }
+    for (k = 0; k < bdcount; k++) {
+      for (i = 0; i < cavetetlist->objects; i++) {
+        if (((triface *) fastlookup(cavetetlist, i))->tet == bdtets[k].tet) break;
+      }
+      if (i == cavetetlist->objects) break; // Not in the star.
+    }
+    if (k < bdcount) {
+      cavetetlist->restart();
+      cavetetvertlist->restart();
+      b->flip_valid_angles = 0;
+      return 0;
+    }
+  }
+
   cavetetlist->restart(); // This list may be re-used.
   if (cavetetvertlist->objects > 3l) {
     valence = reduceedgesatvertex(steinerpt, cavetetvertlist, fc);
