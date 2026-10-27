@@ -34058,9 +34058,13 @@ long tetgenmesh::repair_badqual_tets(bool bFlips, bool bCollapse, bool bSteiners
         if (fabs(vol6 - bt->cent[4]) > 1e-6) {
           triface checktet = bt->tt;
           badface *bak_nextitem = bt->nextitem; // bakup this value.
-          get_tetqual(&checktet, NULL, bt); // Re-calculate its quality.
+          // Change by Caio SOUZA: removed the 'bt->tt = checktet;' that
+          //   followed get_tetqual() and overwrote the edge it found. Fixes
+          //   the unknown flat tet shape (code 2) in get_flat_T_tet_shape().
+          // Re-calculate its quality. It also sets 'bt->tt' at the edge with
+          //   the largest dihedral angle, which repair_tet() relies on.
+          get_tetqual(&checktet, NULL, bt);
           bt->nextitem = bak_nextitem;
-          bt->tt = checktet;
           if ((bt->key > que_max_asp) || (bt->cent[0] < que_cosmaxd)) {
             // It is still a bad quality tet.
             bt->forg  =  org(bt->tt);
