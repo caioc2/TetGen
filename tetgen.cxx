@@ -33257,6 +33257,9 @@ bool tetgenmesh::collapse_edge_to_improve(triface *short_edge, REAL in_asp, REAL
     if (lambda == 0.0) {
       // Swap a and b. So a is not fixed, and b is fixed.
       esymself(*short_edge);
+      // Change by Caio SOUZA: update lambda after the swap. Otherwise the
+      //   fixed vertex was moved without checks, creating inverted tets.
+      lambda = 1.0; // pb is fixed.
     }
   }
   
