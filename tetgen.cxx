@@ -34101,9 +34101,13 @@ long tetgenmesh::repair_badqual_tets(bool bFlips, bool bCollapse, bool bSteiners
       if (chkvol) {
         // The operations, edge collapse and vertex smoothing, will change
         //   the position of the vertices. If so, re-calculate its quality.
-        //   Compare the saved volume to detect if this tet is changed or not.
-        REAL vol6 = orient3d(bt->fdest, bt->forg, bt->fapex, bt->foppo);
-        if (fabs(vol6 - bt->cent[4]) > 1e-6) {
+        // Change by Caio SOUZA: always re-calculate it. The saved volume
+        //   (compared with an absolute tolerance of 1e-6) missed the moves of
+        //   the vertices of small or flat tets, and of a vertex that moves
+        //   parallel to its opposite face. repair_tet() then used the old
+        //   shortest edge length, found no edge of that length and stopped
+        //   with code 2.
+        {
           triface checktet = bt->tt;
           badface *bak_nextitem = bt->nextitem; // bakup this value.
           // Change by Caio SOUZA: removed the 'bt->tt = checktet;' that
